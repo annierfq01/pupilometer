@@ -3,705 +3,1019 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Pupilometry Recorder - Cámara Trasera | Protocolo 6s Flash 200ms</title>
+    <title>Pupilómetro v2 | Alta Precisión</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@300;600;800&display=swap');
+
+        :root {
+            --cyan: #00f5d4;
+            --amber: #ffd166;
+            --red: #ef233c;
+            --dim: rgba(0,245,212,0.08);
+            --bg: #070b10;
+            --panel: rgba(10,18,28,0.85);
         }
 
+        * { margin:0; padding:0; box-sizing:border-box; }
+
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #0a0f1a 0%, #05070c 100%);
+            font-family: 'Exo 2', sans-serif;
+            background: var(--bg);
             min-height: 100vh;
             display: flex;
             justify-content: center;
-            align-items: center;
-            padding: 15px;
+            align-items: flex-start;
+            padding: 16px;
+            overflow-x: hidden;
+        }
+
+        /* Fondo con grid */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(0,245,212,0.04) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0,245,212,0.04) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none;
+            z-index: 0;
         }
 
         .container {
-            max-width: 550px;
+            max-width: 520px;
             width: 100%;
-            margin: 0 auto;
+            position: relative;
+            z-index: 1;
         }
 
-        /* Panel de Video */
+        /* Header */
+        .header {
+            text-align: center;
+            margin-bottom: 16px;
+            padding: 14px 0 10px;
+        }
+        .header h1 {
+            font-family: 'Exo 2', sans-serif;
+            font-weight: 800;
+            font-size: 1.4rem;
+            color: var(--cyan);
+            letter-spacing: 3px;
+            text-transform: uppercase;
+        }
+        .header .version-badge {
+            display: inline-block;
+            margin-top: 4px;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 10px;
+            color: rgba(0,245,212,0.5);
+            letter-spacing: 2px;
+            border: 1px solid rgba(0,245,212,0.2);
+            padding: 2px 10px;
+            border-radius: 20px;
+        }
+
+        /* Video */
         .video-panel {
             background: #000;
-            border-radius: 24px;
+            border-radius: 20px;
             overflow: hidden;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.5);
-            border: 1px solid rgba(78, 205, 196, 0.3);
+            border: 1px solid rgba(0,245,212,0.25);
+            box-shadow: 0 0 40px rgba(0,245,212,0.08), inset 0 0 30px rgba(0,0,0,0.5);
+            position: relative;
         }
 
         .video-container {
             position: relative;
-            background: #000;
-            aspect-ratio: 4 / 3;
+            aspect-ratio: 4/3;
             width: 100%;
+            background: #000;
         }
 
         #video {
-            width: 100%;
-            height: 100%;
+            width: 100%; height: 100%;
             object-fit: cover;
+            display: block;
         }
+
+        /* Flash overlay — cubre toda la pantalla para máximo estímulo */
+        #flashOverlay {
+            position: fixed;
+            inset: 0;
+            background: white;
+            opacity: 0;
+            pointer-events: none;
+            z-index: 9999;
+            transition: opacity 10ms linear;
+        }
+        #flashOverlay.active { opacity: 1; }
 
         .overlay {
             position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
+            inset: 0;
             pointer-events: none;
         }
 
         .guide-circle {
             position: absolute;
-            top: 50%;
-            left: 50%;
+            top: 50%; left: 50%;
             transform: translate(-50%, -50%);
-            width: 160px;
-            height: 160px;
-            border: 3px solid rgba(78, 205, 196, 0.8);
+            width: 150px; height: 150px;
+            border: 2px solid rgba(0,245,212,0.7);
             border-radius: 50%;
-            box-shadow: 0 0 0 9999px rgba(0,0,0,0.4);
+            box-shadow:
+                0 0 0 9999px rgba(0,0,0,0.35),
+                0 0 20px rgba(0,245,212,0.3);
         }
 
-        .guide-circle::after {
-            content: "👁️";
+        .guide-circle::before {
+            content: '';
             position: absolute;
-            top: -30px;
-            left: 50%;
-            transform: translateX(-50%);
-            font-size: 24px;
-            background: rgba(0,0,0,0.6);
-            padding: 4px 12px;
-            border-radius: 20px;
-            color: #4ecdc4;
+            inset: -8px;
+            border-radius: 50%;
+            border: 1px dashed rgba(0,245,212,0.25);
+            animation: rotate 8s linear infinite;
         }
 
-        .guide-text {
+        @keyframes rotate { to { transform: rotate(360deg); } }
+
+        /* REC indicator */
+        .rec-badge {
             position: absolute;
-            bottom: 15px;
-            left: 0;
-            right: 0;
-            text-align: center;
-            color: white;
-            font-size: 11px;
+            top: 12px; left: 12px;
+            display: flex; align-items: center; gap: 6px;
             background: rgba(0,0,0,0.7);
-            padding: 8px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 11px;
+            color: white;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .rec-badge.visible { opacity: 1; }
+        .rec-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--red);
+            animation: blink 1s infinite;
+        }
+        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+        /* FPS badge */
+        .fps-badge {
+            position: absolute;
+            top: 12px; right: 12px;
+            background: rgba(0,0,0,0.7);
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 10px;
+            color: var(--cyan);
         }
 
-        /* Botones de control */
+        .guide-label {
+            position: absolute;
+            bottom: 12px; left: 0; right: 0;
+            text-align: center;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 10px;
+            color: rgba(255,255,255,0.6);
+            letter-spacing: 1px;
+        }
+
+        /* Buttons */
         .button-container {
-            margin-top: 20px;
-            display: flex;
-            gap: 15px;
-            justify-content: center;
+            margin-top: 14px;
+            display: flex; gap: 10px;
         }
 
         button {
             flex: 1;
-            padding: 16px 20px;
-            font-size: 1.1rem;
-            font-weight: bold;
+            padding: 14px 16px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            font-family: 'Exo 2', sans-serif;
             border: none;
-            border-radius: 60px;
+            border-radius: 12px;
             cursor: pointer;
-            transition: all 0.3s ease;
-            font-family: inherit;
+            letter-spacing: 1px;
+            transition: all 0.2s ease;
+            text-transform: uppercase;
         }
 
         .btn-start {
-            background: linear-gradient(135deg, #4ecdc4, #2c7a6e);
-            color: white;
-            box-shadow: 0 4px 15px rgba(78,205,196,0.3);
+            background: linear-gradient(135deg, var(--cyan), #00b894);
+            color: #070b10;
+            box-shadow: 0 4px 20px rgba(0,245,212,0.25);
         }
-
         .btn-start:hover:not(:disabled) {
             transform: translateY(-2px);
+            box-shadow: 0 6px 30px rgba(0,245,212,0.4);
         }
 
         .btn-stop {
-            background: linear-gradient(135deg, #e74c3c, #a82313);
+            background: linear-gradient(135deg, var(--red), #b02031);
             color: white;
+            box-shadow: 0 4px 20px rgba(239,35,60,0.2);
         }
+        .btn-stop:hover:not(:disabled) { transform: translateY(-2px); }
 
         .btn-camera {
-            background: linear-gradient(135deg, #3498db, #2980b9);
-            color: white;
+            width: 100%;
             margin-top: 10px;
-            padding: 12px;
-            font-size: 0.9rem;
+            padding: 10px;
+            font-size: 0.8rem;
+            font-family: 'Exo 2', sans-serif;
+            background: rgba(0,245,212,0.08);
+            color: var(--cyan);
+            border: 1px solid rgba(0,245,212,0.2);
+            border-radius: 10px;
+            cursor: pointer;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            transition: all 0.2s;
         }
+        .btn-camera:hover { background: rgba(0,245,212,0.15); }
 
         button:disabled {
-            opacity: 0.5;
+            opacity: 0.35;
             cursor: not-allowed;
-            transform: none;
+            transform: none !important;
         }
 
-        /* Panel de estado */
+        /* Status panel */
         .status-panel {
-            background: rgba(0,0,0,0.6);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            padding: 20px;
-            margin-top: 20px;
+            margin-top: 14px;
+            background: var(--panel);
+            border: 1px solid rgba(0,245,212,0.12);
+            border-radius: 16px;
+            padding: 16px;
+            backdrop-filter: blur(12px);
         }
 
-        .status-area {
-            text-align: center;
+        .status-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
         }
 
         #status {
-            font-size: 0.95rem;
-            font-weight: bold;
-            color: #4ecdc4;
-            margin-bottom: 12px;
-            background: rgba(0,0,0,0.5);
-            padding: 8px 16px;
-            border-radius: 40px;
-            display: inline-block;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.8rem;
+            color: var(--cyan);
+            background: rgba(0,245,212,0.08);
+            padding: 5px 14px;
+            border-radius: 20px;
+            border: 1px solid rgba(0,245,212,0.15);
+            flex: 1;
+            text-align: center;
         }
 
         #timer {
-            font-size: 2.5rem;
-            font-family: 'Courier New', monospace;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 2.8rem;
             font-weight: bold;
-            color: #f39c12;
+            color: var(--amber);
+            text-align: center;
+            letter-spacing: 3px;
+            margin: 4px 0 10px;
+            text-shadow: 0 0 20px rgba(255,209,102,0.4);
         }
 
-        .progress-bar {
+        .progress-track {
             width: 100%;
-            height: 6px;
-            background: #2c3e50;
-            border-radius: 3px;
-            overflow: hidden;
-            margin-top: 15px;
+            height: 4px;
+            background: rgba(255,255,255,0.07);
+            border-radius: 2px;
+            overflow: visible;
+            position: relative;
         }
-
         .progress-fill {
             height: 100%;
-            background: linear-gradient(90deg, #4ecdc4, #f39c12);
+            background: linear-gradient(90deg, var(--cyan), var(--amber));
             width: 0%;
-            transition: width 0.1s linear;
+            border-radius: 2px;
+            transition: width 0.08s linear;
+            position: relative;
+        }
+        .progress-fill::after {
+            content: '';
+            position: absolute;
+            right: -3px; top: -3px;
+            width: 10px; height: 10px;
+            background: var(--amber);
+            border-radius: 50%;
+            box-shadow: 0 0 8px var(--amber);
         }
 
-        .protocol-info {
-            background: rgba(78, 205, 196, 0.1);
-            border-radius: 16px;
-            padding: 12px 15px;
-            margin-top: 15px;
-            border: 1px solid rgba(78, 205, 196, 0.3);
+        /* Protocolo timeline */
+        .timeline {
+            margin-top: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
         }
 
-        .protocol-info p {
-            color: #ecf0f1;
-            font-size: 12px;
-            margin: 5px 0;
+        .timeline-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 11px;
+        }
+
+        .t-badge {
+            font-family: 'Share Tech Mono', monospace;
+            background: rgba(0,0,0,0.5);
+            border: 1px solid rgba(0,245,212,0.2);
+            color: var(--cyan);
+            padding: 2px 8px;
+            border-radius: 20px;
+            font-size: 10px;
+            min-width: 42px;
+            text-align: center;
+        }
+
+        .t-label { color: rgba(255,255,255,0.75); }
+        .t-bold { color: white; font-weight: 600; }
+
+        /* Flash indicator */
+        .flash-row {
+            margin-top: 12px;
             display: flex;
             align-items: center;
             gap: 8px;
-        }
-
-        .protocol-info .time-badge {
-            background: #2c3e50;
-            padding: 2px 8px;
-            border-radius: 20px;
-            font-family: monospace;
             font-size: 11px;
-            color: #4ecdc4;
+            color: rgba(255,255,255,0.6);
+            font-family: 'Share Tech Mono', monospace;
         }
-
-        .flash-status {
-            display: inline-block;
-            width: 10px;
-            height: 10px;
+        .flash-dot {
+            width: 8px; height: 8px;
             border-radius: 50%;
-            background: #7f8c8d;
-            margin-right: 8px;
+            background: rgba(255,255,255,0.2);
+            flex-shrink: 0;
         }
-
-        .flash-status.available {
+        .flash-dot.on {
             background: #2ecc71;
-            box-shadow: 0 0 5px #2ecc71;
+            box-shadow: 0 0 6px #2ecc71;
         }
 
-        .recordings-section {
-            margin-top: 20px;
-            background: rgba(0,0,0,0.4);
-            border-radius: 20px;
-            padding: 15px;
+        /* Log panel */
+        .log-panel {
+            margin-top: 14px;
+            background: var(--panel);
+            border: 1px solid rgba(0,245,212,0.1);
+            border-radius: 16px;
+            padding: 14px;
         }
 
-        .recordings-section h3 {
-            color: white;
-            font-size: 0.9rem;
-            margin-bottom: 12px;
-        }
-
-        .recordings-list {
-            max-height: 200px;
-            overflow-y: auto;
-        }
-
-        .recording-item {
-            background: rgba(0,0,0,0.5);
-            border-radius: 12px;
-            padding: 10px 12px;
-            margin-bottom: 8px;
+        .log-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            border-left: 3px solid #4ecdc4;
+            margin-bottom: 10px;
         }
 
-        .recording-name {
-            color: #ecf0f1;
-            font-size: 11px;
-            font-family: monospace;
+        .log-title {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 10px;
+            color: var(--cyan);
+            letter-spacing: 2px;
+            text-transform: uppercase;
         }
 
-        .recording-size {
-            color: #95a5a6;
+        #logClearBtn {
             font-size: 9px;
+            padding: 3px 10px;
+            border-radius: 20px;
+            background: rgba(239,35,60,0.15);
+            color: var(--red);
+            border: 1px solid rgba(239,35,60,0.25);
+            cursor: pointer;
+            font-family: 'Share Tech Mono', monospace;
+            flex: unset;
+            letter-spacing: 1px;
+        }
+
+        #logContainer {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 10px;
+            color: rgba(255,255,255,0.55);
+            max-height: 120px;
+            overflow-y: auto;
+            line-height: 1.8;
+        }
+
+        #logContainer .log-entry { display: block; }
+        #logContainer .log-flash { color: var(--amber); }
+        #logContainer .log-ok { color: var(--cyan); }
+        #logContainer .log-err { color: var(--red); }
+
+        /* Recordings */
+        .recordings-section {
+            margin-top: 14px;
+            background: var(--panel);
+            border: 1px solid rgba(0,245,212,0.1);
+            border-radius: 16px;
+            padding: 14px;
+        }
+
+        .rec-title {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 10px;
+            color: var(--cyan);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+        }
+
+        .recordings-list { max-height: 180px; overflow-y: auto; }
+
+        .recording-item {
+            background: rgba(0,0,0,0.4);
+            border-radius: 10px;
+            padding: 10px 12px;
+            margin-bottom: 7px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-left: 2px solid var(--cyan);
+        }
+
+        .rec-name {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 10px;
+            color: rgba(255,255,255,0.8);
+        }
+
+        .rec-meta {
+            font-size: 9px;
+            color: rgba(255,255,255,0.35);
+            margin-top: 2px;
+            font-family: 'Share Tech Mono', monospace;
         }
 
         .download-btn {
-            background: #2ecc71;
-            border: none;
-            padding: 6px 14px;
+            background: rgba(0,245,212,0.12);
+            border: 1px solid rgba(0,245,212,0.3);
+            padding: 5px 12px;
             border-radius: 20px;
-            color: white;
-            font-size: 11px;
+            color: var(--cyan);
+            font-size: 10px;
             cursor: pointer;
+            font-family: 'Share Tech Mono', monospace;
+            flex: unset;
+            transition: background 0.2s;
         }
+        .download-btn:hover { background: rgba(0,245,212,0.25); }
 
-        .empty-recordings {
+        .empty-recs {
             text-align: center;
-            color: rgba(255,255,255,0.4);
+            color: rgba(255,255,255,0.2);
             padding: 20px;
-            font-size: 12px;
+            font-size: 11px;
+            font-family: 'Share Tech Mono', monospace;
         }
 
+        /* Warning */
         .warning-note {
-            background: rgba(231, 76, 60, 0.2);
-            border-radius: 12px;
-            padding: 10px;
-            margin-top: 15px;
-            font-size: 11px;
-            color: #ffaaaa;
-            text-align: center;
+            margin-top: 12px;
+            background: rgba(255,209,102,0.07);
+            border: 1px solid rgba(255,209,102,0.2);
+            border-radius: 10px;
+            padding: 10px 14px;
+            font-size: 10px;
+            color: rgba(255,209,102,0.8);
+            line-height: 1.6;
+            font-family: 'Share Tech Mono', monospace;
         }
 
-        .camera-selector {
-            margin-top: 10px;
-            text-align: center;
-        }
-
-        .camera-badge {
-            font-size: 11px;
-            color: #4ecdc4;
-            background: rgba(0,0,0,0.5);
-            padding: 4px 10px;
+        /* Precision indicator */
+        .precision-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(0,245,212,0.06);
+            border: 1px solid rgba(0,245,212,0.15);
             border-radius: 20px;
-            display: inline-block;
+            padding: 4px 12px;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 9px;
+            color: var(--cyan);
+            margin-top: 10px;
         }
+        .precision-dot {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: var(--cyan);
+            box-shadow: 0 0 6px var(--cyan);
+        }
+
+        /* Scrollbar custom */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(0,245,212,0.2); border-radius: 2px; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <!-- Panel de Video -->
-        <div class="video-panel">
-            <div class="video-container">
-                <video id="video" autoplay playsinline muted></video>
-                <div class="overlay">
-                    <div class="guide-circle"></div>
-                    <div class="guide-text">
-                        🎯 Coloque su ojo dentro del círculo | Mantenga mirada fija y distante
-                    </div>
+
+<!-- Flash overlay pantalla completa -->
+<div id="flashOverlay"></div>
+
+<div class="container">
+
+    <div class="header">
+        <h1>👁 Pupilómetro</h1>
+        <div class="version-badge">v2.0 · ALTA PRECISIÓN · performance.now()</div>
+    </div>
+
+    <!-- Video -->
+    <div class="video-panel">
+        <div class="video-container">
+            <video id="video" autoplay playsinline muted></video>
+            <div class="overlay">
+                <div class="guide-circle"></div>
+                <div class="guide-label">CENTRE EL OJO · MANTENGA MIRADA FIJA</div>
+                <div class="rec-badge" id="recBadge">
+                    <div class="rec-dot"></div> REC
                 </div>
-            </div>
-        </div>
-
-        <!-- Botones de control -->
-        <div class="button-container">
-            <button id="startBtn" class="btn-start" disabled>▶ INICIAR PROTOCOLO</button>
-            <button id="stopBtn" class="btn-stop" disabled>⏹ DETENER</button>
-        </div>
-
-        <div class="camera-selector">
-            <button id="switchCameraBtn" class="btn-camera">🔄 Cambiar a Cámara Trasera</button>
-        </div>
-
-        <!-- Panel de Estado -->
-        <div class="status-panel">
-            <div class="status-area">
-                <div id="status">📷 Conectando cámara trasera...</div>
-                <div id="timer">---</div>
-                <div class="progress-bar">
-                    <div class="progress-fill" id="progress"></div>
-                </div>
-            </div>
-
-            <div class="protocol-info">
-                <p>📋 <strong>Protocolo de estimulación (6 segundos)</strong></p>
-                <p><span class="time-badge">0.0s</span> ▶ Inicio de grabación (línea basal)</p>
-                <p><span class="time-badge">1.0s</span> 💡 <strong>FLASH ON</strong> (estímulo de 200ms)</p>
-                <p><span class="time-badge">1.2s</span> 🔆 FLASH OFF (inicio constricción)</p>
-                <p><span class="time-badge">6.0s</span> ⏹ Fin de grabación</p>
-                <p id="flashIndicator" style="margin-top: 8px;"><span class="flash-status"></span> Flash: <span id="flashText">Verificando...</span></p>
-            </div>
-
-            <div class="warning-note">
-                ⚡ <strong>Importante:</strong> La cámara TRASERA tiene flash. Asegúrese de usar la cámara trasera.<br>
-                Mantenga el ojo dentro del círculo verde. No parpadee durante el flash.
-            </div>
-        </div>
-
-        <!-- Lista de Grabaciones -->
-        <div class="recordings-section">
-            <h3>📀 GRABACIONES GUARDADAS</h3>
-            <div class="recordings-list" id="recordingsContainer">
-                <div class="empty-recordings">No hay grabaciones aún</div>
+                <div class="fps-badge" id="fpsBadge">— fps</div>
             </div>
         </div>
     </div>
 
-    <script>
-        // Elementos DOM
-        const video = document.getElementById('video');
-        const startBtn = document.getElementById('startBtn');
-        const stopBtn = document.getElementById('stopBtn');
-        const switchCameraBtn = document.getElementById('switchCameraBtn');
-        const statusDiv = document.getElementById('status');
-        const timerDiv = document.getElementById('timer');
-        const progressFill = document.getElementById('progress');
-        const recordingsContainer = document.getElementById('recordingsContainer');
-        const flashIndicator = document.getElementById('flashIndicator');
-        const flashTextSpan = document.getElementById('flashText');
+    <!-- Botones -->
+    <div class="button-container">
+        <button id="startBtn" class="btn-start" disabled>▶ INICIAR</button>
+        <button id="stopBtn" class="btn-stop" disabled>⏹ DETENER</button>
+    </div>
+    <button id="switchCameraBtn" class="btn-camera">🔄 Cambiar a Cámara Trasera</button>
 
-        // Variables de estado
-        let mediaStream = null;
-        let mediaRecorder = null;
-        let recordedChunks = [];
-        let recordingTimer = null;
-        let isRecording = false;
-        let recordings = [];
-        let torchSupported = false;
-        let videoTrack = null;
-        let currentFacingMode = 'environment'; // 'environment' = trasera, 'user' = frontal
+    <!-- Status -->
+    <div class="status-panel">
+        <div id="status">📷 Conectando cámara trasera...</div>
+        <div id="timer">0.0s</div>
+        <div class="progress-track">
+            <div class="progress-fill" id="progress"></div>
+        </div>
 
-        // Constantes del protocolo
-        const PROTOCOL = {
-            FLASH_ON_TIME: 1000,
-            FLASH_DURATION: 200,
-            TOTAL_DURATION: 6000
-        };
+        <!-- Timeline del protocolo -->
+        <div class="timeline">
+            <div class="timeline-row">
+                <span class="t-badge">0.0s</span>
+                <span class="t-label">▶ Inicio — línea basal</span>
+            </div>
+            <div class="timeline-row">
+                <span class="t-badge" id="t-flashon">1.0s</span>
+                <span class="t-bold">💡 FLASH ON</span>
+                <span class="t-label">(estímulo)</span>
+            </div>
+            <div class="timeline-row">
+                <span class="t-badge" id="t-flashoff">1.2s</span>
+                <span class="t-bold">🔆 FLASH OFF</span>
+                <span class="t-label">→ constricción</span>
+            </div>
+            <div class="timeline-row">
+                <span class="t-badge">6.0s</span>
+                <span class="t-label">⏹ Fin — recuperación completada</span>
+            </div>
+        </div>
 
-        // Inicializar cámara con facing mode específico
-        async function initCamera(facingMode = 'environment') {
-            try {
-                if (mediaStream) {
-                    mediaStream.getTracks().forEach(track => track.stop());
-                }
+        <div class="flash-row">
+            <span class="flash-dot" id="flashDot"></span>
+            <span>Flash / Torch: <strong id="flashText">Verificando...</strong></span>
+        </div>
 
-                // Configuración para cámara trasera (environment) o frontal (user)
-                const constraints = {
-                    video: {
-                        facingMode: { exact: facingMode },
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
-                    },
-                    audio: false
-                };
+        <div style="text-align:center">
+            <div class="precision-badge">
+                <div class="precision-dot"></div>
+                Timing con performance.now() · Resolución sub-ms
+            </div>
+        </div>
 
-                mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
-                video.srcObject = mediaStream;
-                video.style.transform = facingMode === 'user' ? 'scaleX(-1)' : 'none';
-                
-                // Obtener track de video
-                videoTrack = mediaStream.getVideoTracks()[0];
-                
-                // Verificar soporte de flash (torch)
-                if (videoTrack && videoTrack.getCapabilities) {
-                    const capabilities = videoTrack.getCapabilities();
-                    torchSupported = capabilities.torch === true;
-                    
-                    if (torchSupported) {
-                        flashTextSpan.innerHTML = '✅ DISPONIBLE';
-                        flashIndicator.querySelector('.flash-status').className = 'flash-status available';
-                        statusDiv.innerHTML = `✅ Cámara ${facingMode === 'environment' ? 'TRASERA' : 'FRONTAL'} lista | Flash disponible`;
-                    } else {
-                        flashTextSpan.innerHTML = '❌ No disponible en esta cámara';
-                        flashIndicator.querySelector('.flash-status').className = 'flash-status';
-                        statusDiv.innerHTML = `⚠️ Cámara ${facingMode === 'environment' ? 'TRASERA' : 'FRONTAL'} sin flash. Use cámara TRASERA.`;
-                    }
-                } else {
-                    flashTextSpan.innerHTML = '⚠️ No se pudo verificar';
-                    statusDiv.innerHTML = `📷 Cámara ${facingMode === 'environment' ? 'TRASERA' : 'FRONTAL'} conectada`;
-                }
+        <div class="warning-note">
+            ⚡ Use cámara TRASERA (tiene torch físico). Distancia ~10cm del ojo.
+            No parpadee durante el flash. Mire un punto fijo.
+        </div>
+    </div>
 
-                currentFacingMode = facingMode;
-                startBtn.disabled = false;
-                
-                return true;
-                
-            } catch (error) {
-                console.error(`Error al acceder a cámara ${facingMode}:`, error);
-                
-                if (facingMode === 'environment') {
-                    statusDiv.innerHTML = "⚠️ No se pudo acceder a cámara trasera. Intente de nuevo o verifique permisos.";
-                } else {
-                    statusDiv.innerHTML = "❌ Error: No se pudo acceder a la cámara";
-                }
-                
-                startBtn.disabled = true;
-                return false;
-            }
+    <!-- Log de eventos de precisión -->
+    <div class="log-panel">
+        <div class="log-header">
+            <span class="log-title">📋 Log de Precisión Temporal</span>
+            <button id="logClearBtn">LIMPIAR</button>
+        </div>
+        <div id="logContainer">
+            <span class="log-entry" style="color:rgba(255,255,255,0.2)">— Esperando grabación...</span>
+        </div>
+    </div>
+
+    <!-- Grabaciones -->
+    <div class="recordings-section">
+        <div class="rec-title">📀 Grabaciones</div>
+        <div class="recordings-list" id="recordingsContainer">
+            <div class="empty-recs">Sin grabaciones aún</div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    // ─── DOM ───────────────────────────────────────────────────────────────
+    const video              = document.getElementById('video');
+    const startBtn           = document.getElementById('startBtn');
+    const stopBtn            = document.getElementById('stopBtn');
+    const switchCameraBtn    = document.getElementById('switchCameraBtn');
+    const statusDiv          = document.getElementById('status');
+    const timerDiv           = document.getElementById('timer');
+    const progressFill       = document.getElementById('progress');
+    const recordingsContainer= document.getElementById('recordingsContainer');
+    const flashDot           = document.getElementById('flashDot');
+    const flashTextSpan      = document.getElementById('flashText');
+    const recBadge           = document.getElementById('recBadge');
+    const fpsBadge           = document.getElementById('fpsBadge');
+    const logContainer       = document.getElementById('logContainer');
+    const logClearBtn        = document.getElementById('logClearBtn');
+    const flashOverlay       = document.getElementById('flashOverlay');
+
+    // ─── Estado ───────────────────────────────────────────────────────────
+    let mediaStream      = null;
+    let mediaRecorder    = null;
+    let recordedChunks   = [];
+    let isRecording      = false;
+    let recordings       = [];
+    let torchSupported   = false;
+    let videoTrack       = null;
+    let currentFacingMode= 'environment';
+    let rafHandle        = null;
+    let recordStartPerf  = 0;   // performance.now() en el momento del start
+    let flashOnPerf      = 0;   // timestamp real del flash ON
+    let flashOffPerf     = 0;   // timestamp real del flash OFF
+    let scheduledHandles = [];   // para poder cancelar todos los timers
+    let logEntries       = [];
+    let fpsEstimate      = 0;
+    let lastFrameTime    = 0;
+    let frameCount       = 0;
+
+    // ─── Protocolo ────────────────────────────────────────────────────────
+    const PROTOCOL = {
+        FLASH_ON_TIME  : 1000,  // ms desde inicio
+        FLASH_DURATION : 200,   // ms de duración del flash
+        TOTAL_DURATION : 6000   // ms duración total
+    };
+
+    // ─── Log ──────────────────────────────────────────────────────────────
+    function addLog(msg, type = '') {
+        const el = document.createElement('span');
+        el.className = `log-entry${type ? ' log-' + type : ''}`;
+        el.textContent = msg;
+        logEntries.push(el);
+        if (logContainer.querySelector('span[style]')) logContainer.innerHTML = '';
+        logContainer.appendChild(el);
+        logContainer.appendChild(document.createElement('br'));
+        logContainer.scrollTop = logContainer.scrollHeight;
+    }
+
+    logClearBtn.addEventListener('click', () => {
+        logEntries = [];
+        logContainer.innerHTML = '<span style="color:rgba(255,255,255,0.2)">— Log limpiado</span>';
+    });
+
+    // ─── FPS detection via requestAnimationFrame ──────────────────────────
+    function detectFPS() {
+        frameCount++;
+        const now = performance.now();
+        if (now - lastFrameTime >= 1000) {
+            fpsEstimate = frameCount;
+            frameCount = 0;
+            lastFrameTime = now;
+            fpsBadge.textContent = `${fpsEstimate} fps`;
         }
+        if (isRecording || true) requestAnimationFrame(detectFPS);
+    }
+    requestAnimationFrame(detectFPS);
 
-        // Cambiar a cámara trasera
-        async function switchToBackCamera() {
-            statusDiv.innerHTML = "🔄 Cambiando a cámara TRASERA...";
-            startBtn.disabled = true;
-            const success = await initCamera('environment');
-            if (!success) {
-                statusDiv.innerHTML = "⚠️ No se pudo usar cámara trasera. Verifique que su dispositivo tenga cámara trasera.";
-            }
-        }
+    // ─── Inicializar cámara ───────────────────────────────────────────────
+    async function initCamera(facingMode = 'environment') {
+        try {
+            if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
 
-        // Control del flash
-        async function setFlash(state) {
-            if (!torchSupported || !videoTrack) return false;
-            
-            try {
-                await videoTrack.applyConstraints({
-                    advanced: [{ torch: state }]
-                });
-                return true;
-            } catch (error) {
-                console.warn("No se pudo controlar el flash:", error);
-                return false;
-            }
-        }
-
-        // Actualizar display de tiempo
-        function updateTimerDisplay(currentTime, totalTime) {
-            const seconds = (currentTime / 1000).toFixed(1);
-            timerDiv.textContent = `${seconds}s`;
-            const percent = (currentTime / totalTime) * 100;
-            progressFill.style.width = `${percent}%`;
-        }
-
-        // Iniciar protocolo
-        async function startProtocol() {
-            if (!mediaStream) {
-                alert("Espere a que la cámara esté lista");
-                return;
-            }
-
-            if (!torchSupported) {
-                const confirmStart = confirm("⚠️ ADVERTENCIA: El flash NO está disponible en esta cámara.\n\nEl protocolo requiere un estímulo luminoso.\n¿Desea continuar de todas formas?");
-                if (!confirmStart) return;
-            }
-
-            if (isRecording) return;
-
-            recordedChunks = [];
-            isRecording = true;
-            startBtn.disabled = true;
-            stopBtn.disabled = false;
-            
-            try {
-                mediaRecorder = new MediaRecorder(mediaStream, {
-                    mimeType: 'video/webm;codecs=vp8,opus'
-                });
-                
-                mediaRecorder.ondataavailable = (event) => {
-                    if (event.data.size > 0) {
-                        recordedChunks.push(event.data);
-                    }
-                };
-                
-                mediaRecorder.onstop = () => {
-                    saveRecording();
-                };
-                
-                mediaRecorder.start();
-                const startTime = Date.now();
-                
-                statusDiv.innerHTML = "🔴 GRABANDO - Línea basal (Mantenga mirada fija)";
-                updateTimerDisplay(0, PROTOCOL.TOTAL_DURATION);
-                
-                // Programar eventos
-                setTimeout(() => {
-                    if (isRecording) {
-                        statusDiv.innerHTML = "💡 FLASH ENCENDIDO - Estímulo luminoso";
-                        setFlash(true);
-                    }
-                }, PROTOCOL.FLASH_ON_TIME);
-                
-                setTimeout(() => {
-                    if (isRecording) {
-                        statusDiv.innerHTML = "🔆 FLASH APAGADO - Constricción pupilar";
-                        setFlash(false);
-                    }
-                }, PROTOCOL.FLASH_ON_TIME + PROTOCOL.FLASH_DURATION);
-                
-                setTimeout(() => {
-                    if (isRecording) {
-                        statusDiv.innerHTML = "⏹ Grabación completada";
-                        stopRecording();
-                    }
-                }, PROTOCOL.TOTAL_DURATION);
-                
-                // Actualizar tiempo
-                const updateInterval = setInterval(() => {
-                    if (!isRecording) {
-                        clearInterval(updateInterval);
-                        return;
-                    }
-                    const elapsed = Date.now() - startTime;
-                    updateTimerDisplay(elapsed, PROTOCOL.TOTAL_DURATION);
-                    
-                    if (elapsed < PROTOCOL.FLASH_ON_TIME) {
-                        statusDiv.innerHTML = "🔴 GRABANDO - Línea basal (Mantenga mirada fija)";
-                    } else if (elapsed < PROTOCOL.FLASH_ON_TIME + PROTOCOL.FLASH_DURATION) {
-                        statusDiv.innerHTML = "💡 FLASH ACTIVO - Estímulo luminoso";
-                    } else if (elapsed < PROTOCOL.TOTAL_DURATION) {
-                        const remaining = ((PROTOCOL.TOTAL_DURATION - elapsed) / 1000).toFixed(1);
-                        statusDiv.innerHTML = `📹 GRABANDO - Recuperación pupilar (${remaining}s restantes)`;
-                    }
-                }, 100);
-                
-                recordingTimer = updateInterval;
-                
-            } catch (error) {
-                console.error("Error al iniciar grabación:", error);
-                statusDiv.innerHTML = "❌ Error al iniciar grabación";
-                isRecording = false;
-                startBtn.disabled = false;
-                stopBtn.disabled = true;
-            }
-        }
-
-        // Detener grabación
-        function stopRecording() {
-            if (!isRecording) return;
-            
-            isRecording = false;
-            
-            if (recordingTimer) {
-                clearInterval(recordingTimer);
-                recordingTimer = null;
-            }
-            
-            setFlash(false);
-            
-            if (mediaRecorder && mediaRecorder.state === 'recording') {
-                mediaRecorder.stop();
-            }
-            
-            statusDiv.innerHTML = "✅ Grabación finalizada";
-            timerDiv.textContent = "---";
-            progressFill.style.width = "0%";
-        }
-
-        // Guardar grabación
-        function saveRecording() {
-            if (recordedChunks.length === 0) {
-                statusDiv.innerHTML = "⚠️ No se guardaron datos";
-                startBtn.disabled = false;
-                stopBtn.disabled = true;
-                return;
-            }
-            
-            const blob = new Blob(recordedChunks, { type: 'video/webm' });
-            const url = URL.createObjectURL(blob);
-            const now = new Date();
-            const timestamp = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}-${String(now.getMinutes()).padStart(2,'0')}-${String(now.getSeconds()).padStart(2,'0')}`;
-            const filename = `pupilometria_${timestamp}.webm`;
-            
-            const recording = {
-                id: Date.now(),
-                filename: filename,
-                url: url,
-                timestamp: timestamp,
-                size: (blob.size / 1024).toFixed(1)
+            // MEJORA 1: Pedir 60fps y máxima resolución
+            const constraints = {
+                video: {
+                    facingMode: { exact: facingMode },
+                    width:     { ideal: 1920 },
+                    height:    { ideal: 1080 },
+                    frameRate: { ideal: 60, min: 30 }
+                },
+                audio: false
             };
-            
-            recordings.unshift(recording);
-            updateRecordingsList();
-            
-            // Descargar automáticamente
-            autoDownload(url, filename);
-            
-            statusDiv.innerHTML = `✅ Video guardado: ${filename}`;
+
+            mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+            video.srcObject = mediaStream;
+            video.style.transform = facingMode === 'user' ? 'scaleX(-1)' : 'none';
+
+            videoTrack = mediaStream.getVideoTracks()[0];
+            const settings = videoTrack.getSettings();
+            addLog(`📷 Cámara: ${settings.width}×${settings.height} @ ${settings.frameRate || '?'}fps`, 'ok');
+
+            // Verificar torch
+            if (videoTrack && videoTrack.getCapabilities) {
+                const cap = videoTrack.getCapabilities();
+                torchSupported = cap.torch === true;
+                if (torchSupported) {
+                    flashTextSpan.innerHTML = '✅ DISPONIBLE';
+                    flashDot.className = 'flash-dot on';
+                    statusDiv.innerHTML = `✅ Cámara ${facingMode === 'environment' ? 'TRASERA' : 'FRONTAL'} lista | Flash OK`;
+                    addLog('✅ Torch / Flash disponible', 'ok');
+
+                    // MEJORA 2: Pre-warm del driver del torch
+                    // Activamos y apagamos inmediatamente para que el driver quede "listo"
+                    // Esto reduce la latencia real del primer encendido
+                    await prewarmTorch();
+                } else {
+                    flashTextSpan.innerHTML = '❌ No disponible';
+                    flashDot.className = 'flash-dot';
+                    statusDiv.innerHTML = `⚠️ Sin flash en esta cámara. Use cámara TRASERA.`;
+                    addLog('⚠️ Torch no disponible en esta cámara', 'err');
+                }
+            }
+
+            currentFacingMode = facingMode;
+            startBtn.disabled = false;
+            return true;
+
+        } catch (err) {
+            console.error(err);
+            statusDiv.innerHTML = '❌ No se pudo acceder a la cámara';
+            addLog(`❌ Error cámara: ${err.message}`, 'err');
+            startBtn.disabled = true;
+            return false;
+        }
+    }
+
+    // MEJORA 2 (implementación): Pre-calentamiento del torch
+    async function prewarmTorch() {
+        if (!torchSupported || !videoTrack) return;
+        try {
+            // Encender y apagar en ciclo muy rápido — el driver queda en estado activo
+            await videoTrack.applyConstraints({ advanced: [{ torch: true }] });
+            await new Promise(r => setTimeout(r, 30));
+            await videoTrack.applyConstraints({ advanced: [{ torch: false }] });
+            addLog('🔥 Pre-warm del torch completado', 'ok');
+        } catch (e) {
+            // No es crítico si falla
+        }
+    }
+
+    // ─── Control del flash ────────────────────────────────────────────────
+    async function setFlash(state) {
+        if (!torchSupported || !videoTrack) return;
+        try {
+            await videoTrack.applyConstraints({ advanced: [{ torch: state }] });
+        } catch (e) {
+            console.warn('Flash error:', e);
+        }
+    }
+
+    // ─── Protocolo principal ──────────────────────────────────────────────
+    async function startProtocol() {
+        if (!mediaStream) { alert('Espere a que la cámara esté lista'); return; }
+
+        if (!torchSupported) {
+            const ok = confirm('⚠️ Flash NO disponible en esta cámara.\nEl protocolo requiere estímulo luminoso.\n¿Continuar de todas formas?');
+            if (!ok) return;
+        }
+
+        if (isRecording) return;
+
+        recordedChunks = [];
+        isRecording = true;
+        flashOnPerf = 0;
+        flashOffPerf = 0;
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        recBadge.classList.add('visible');
+        logContainer.innerHTML = '';
+        logEntries = [];
+
+        try {
+            // Intentar el mejor codec disponible
+            const mimeTypes = [
+                'video/webm;codecs=vp9',
+                'video/webm;codecs=vp8',
+                'video/webm',
+                'video/mp4'
+            ];
+            let mimeType = mimeTypes.find(m => MediaRecorder.isTypeSupported(m)) || '';
+
+            mediaRecorder = new MediaRecorder(mediaStream, mimeType ? { mimeType } : {});
+            mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+            mediaRecorder.onstop = () => saveRecording();
+
+            // MEJORA 3: timeslice pequeño para chunks frecuentes (mejor sync)
+            mediaRecorder.start(100);
+
+            // MEJORA 1: Usar performance.now() para el tiempo de inicio
+            recordStartPerf = performance.now();
+            addLog(`▶ Grabación iniciada [t=0.000ms]`, 'ok');
+            addLog(`   Codec: ${mimeType || 'default'} | FPS camara: ~${fpsEstimate}`);
+
+            statusDiv.innerHTML = '🔴 GRABANDO — Línea basal';
+
+            // ─── Programar flash ON ────────────────────────────────────────
+            const hFlashOn = setTimeout(async () => {
+                if (!isRecording) return;
+
+                // MEJORA 3: Registrar timestamp real antes Y después de applyConstraints
+                const callTime = performance.now();
+                const elapsed = callTime - recordStartPerf;
+
+                flashOverlay.classList.add('active');  // Flash visual pantalla completa
+                await setFlash(true);
+
+                flashOnPerf = performance.now();
+                const actualElapsed = flashOnPerf - recordStartPerf;
+                const latency = flashOnPerf - callTime;
+
+                addLog(`💡 FLASH ON  → t_real=${actualElapsed.toFixed(1)}ms | latencia torch=${latency.toFixed(1)}ms`, 'flash');
+                statusDiv.innerHTML = '💡 FLASH — Estímulo luminoso';
+            }, PROTOCOL.FLASH_ON_TIME);
+
+            // ─── Programar flash OFF ───────────────────────────────────────
+            const hFlashOff = setTimeout(async () => {
+                if (!isRecording) return;
+
+                const callTime = performance.now();
+                flashOverlay.classList.remove('active');
+                await setFlash(false);
+
+                flashOffPerf = performance.now();
+                const actualElapsed = flashOffPerf - recordStartPerf;
+                const latency = flashOffPerf - callTime;
+                const realDuration = flashOffPerf - flashOnPerf;
+
+                addLog(`🔆 FLASH OFF → t_real=${actualElapsed.toFixed(1)}ms | latencia=${latency.toFixed(1)}ms`, 'flash');
+                addLog(`   Duración real del flash: ${realDuration.toFixed(1)}ms (nominal: ${PROTOCOL.FLASH_DURATION}ms)`);
+                statusDiv.innerHTML = '📹 Recuperación pupilar';
+            }, PROTOCOL.FLASH_ON_TIME + PROTOCOL.FLASH_DURATION);
+
+            // ─── Fin de protocolo ──────────────────────────────────────────
+            const hEnd = setTimeout(() => {
+                if (!isRecording) return;
+                addLog(`⏹ Protocolo completado a t=${(performance.now()-recordStartPerf).toFixed(1)}ms`, 'ok');
+                stopRecording();
+            }, PROTOCOL.TOTAL_DURATION);
+
+            scheduledHandles = [hFlashOn, hFlashOff, hEnd];
+
+            // ─── Loop de actualización de UI con performance.now() ─────────
+            function uiLoop(ts) {
+                if (!isRecording) return;
+                const elapsed = performance.now() - recordStartPerf;
+                const secs = (elapsed / 1000).toFixed(1);
+                timerDiv.textContent = `${secs}s`;
+                const pct = Math.min((elapsed / PROTOCOL.TOTAL_DURATION) * 100, 100);
+                progressFill.style.width = `${pct}%`;
+                rafHandle = requestAnimationFrame(uiLoop);
+            }
+            rafHandle = requestAnimationFrame(uiLoop);
+
+        } catch (err) {
+            console.error(err);
+            statusDiv.innerHTML = '❌ Error al iniciar grabación';
+            addLog(`❌ ${err.message}`, 'err');
+            isRecording = false;
             startBtn.disabled = false;
             stopBtn.disabled = true;
+            recBadge.classList.remove('visible');
+        }
+    }
+
+    // ─── Detener grabación ────────────────────────────────────────────────
+    function stopRecording() {
+        if (!isRecording) return;
+        isRecording = false;
+
+        scheduledHandles.forEach(h => clearTimeout(h));
+        scheduledHandles = [];
+
+        if (rafHandle) { cancelAnimationFrame(rafHandle); rafHandle = null; }
+
+        flashOverlay.classList.remove('active');
+        setFlash(false);
+
+        if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+
+        statusDiv.innerHTML = '✅ Grabación finalizada';
+        timerDiv.textContent = '6.0s';
+        progressFill.style.width = '100%';
+        recBadge.classList.remove('visible');
+
+        // Mostrar resumen de precisión
+        if (flashOnPerf > 0 && flashOffPerf > 0) {
+            const onElapsed  = (flashOnPerf  - recordStartPerf).toFixed(1);
+            const offElapsed = (flashOffPerf - recordStartPerf).toFixed(1);
+            const duration   = (flashOffPerf - flashOnPerf).toFixed(1);
+            addLog(`📊 Resumen: ON@${onElapsed}ms OFF@${offElapsed}ms Duración=${duration}ms`, 'ok');
         }
 
-        function autoDownload(url, filename) {
-            const a = document.createElement('a');
-            a.style.display = 'none';
-            a.href = url;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            setTimeout(() => {
-                document.body.removeChild(a);
-            }, 100);
+        setTimeout(() => { progressFill.style.width = '0%'; timerDiv.textContent = '0.0s'; }, 2000);
+    }
+
+    // ─── Guardar grabación ────────────────────────────────────────────────
+    function saveRecording() {
+        if (!recordedChunks.length) {
+            statusDiv.innerHTML = '⚠️ Sin datos de grabación';
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            return;
         }
 
-        function updateRecordingsList() {
-            if (recordings.length === 0) {
-                recordingsContainer.innerHTML = '<div class="empty-recordings">No hay grabaciones aún</div>';
-                return;
-            }
-            
-            let html = '';
-            recordings.forEach(rec => {
-                html += `
-                    <div class="recording-item">
-                        <div>
-                            <div class="recording-name">📹 ${rec.filename}</div>
-                            <div class="recording-size">${rec.size} KB</div>
-                        </div>
-                        <button class="download-btn" onclick="downloadRecordingById(${rec.id})">Descargar</button>
-                    </div>
-                `;
-            });
-            recordingsContainer.innerHTML = html;
-        }
+        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+        const url  = URL.createObjectURL(blob);
+        const now  = new Date();
+        const ts   = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
 
-        window.downloadRecordingById = function(id) {
-            const rec = recordings.find(r => r.id === id);
-            if (rec) {
-                autoDownload(rec.url, rec.filename);
-            }
+        // MEJORA 3: incluir timestamps del flash en el nombre del archivo
+        const flashOnMs  = flashOnPerf  > 0 ? (flashOnPerf  - recordStartPerf).toFixed(0) : 'NA';
+        const flashOffMs = flashOffPerf > 0 ? (flashOffPerf - recordStartPerf).toFixed(0) : 'NA';
+        const filename = `pupilometria_${ts}_flashON-${flashOnMs}ms_flashOFF-${flashOffMs}ms.webm`;
+
+        const rec = {
+            id: Date.now(), filename, url,
+            timestamp: ts,
+            size: (blob.size / 1024).toFixed(1),
+            flashOnMs, flashOffMs
         };
 
-        // Event listeners
-        startBtn.addEventListener('click', startProtocol);
-        stopBtn.addEventListener('click', stopRecording);
-        switchCameraBtn.addEventListener('click', switchToBackCamera);
+        recordings.unshift(rec);
+        updateRecordingsList();
+        autoDownload(url, filename);
 
-        // Iniciar con cámara trasera
-        initCamera('environment');
+        statusDiv.innerHTML = `✅ Guardado: ${filename}`;
+        addLog(`💾 Archivo guardado: ${filename}`, 'ok');
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+    }
 
-        window.addEventListener('beforeunload', () => {
-            if (mediaStream) {
-                mediaStream.getTracks().forEach(track => track.stop());
-            }
-            setFlash(false);
-        });
+    function pad(n) { return String(n).padStart(2, '0'); }
 
-        console.log("🎯 Pupilometry Recorder - Cámara TRASERA | Protocolo 6s | Flash 200ms");
-    </script>
+    function autoDownload(url, filename) {
+        const a = document.createElement('a');
+        a.href = url; a.download = filename;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => document.body.removeChild(a), 200);
+    }
+
+    function updateRecordingsList() {
+        if (!recordings.length) {
+            recordingsContainer.innerHTML = '<div class="empty-recs">Sin grabaciones aún</div>';
+            return;
+        }
+        recordingsContainer.innerHTML = recordings.map(r => `
+            <div class="recording-item">
+                <div>
+                    <div class="rec-name">📹 ${r.filename}</div>
+                    <div class="rec-meta">${r.size} KB · Flash ON: ${r.flashOnMs}ms · OFF: ${r.flashOffMs}ms</div>
+                </div>
+                <button class="download-btn" onclick="downloadById(${r.id})">↓</button>
+            </div>
+        `).join('');
+    }
+
+    window.downloadById = (id) => {
+        const r = recordings.find(x => x.id === id);
+        if (r) autoDownload(r.url, r.filename);
+    };
+
+    // ─── Cambiar cámara ───────────────────────────────────────────────────
+    async function switchToBackCamera() {
+        statusDiv.innerHTML = '🔄 Cambiando a cámara TRASERA...';
+        startBtn.disabled = true;
+        const ok = await initCamera('environment');
+        if (!ok) statusDiv.innerHTML = '⚠️ No se pudo acceder a cámara trasera';
+    }
+
+    // ─── Event listeners ──────────────────────────────────────────────────
+    startBtn.addEventListener('click', startProtocol);
+    stopBtn.addEventListener('click', () => {
+        addLog(`⏹ Stop manual a t=${(performance.now()-recordStartPerf).toFixed(1)}ms`);
+        stopRecording();
+    });
+    switchCameraBtn.addEventListener('click', switchToBackCamera);
+
+    window.addEventListener('beforeunload', () => {
+        if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+        setFlash(false);
+    });
+
+    // ─── Arranque ─────────────────────────────────────────────────────────
+    initCamera('environment');
+    console.log('👁 Pupilómetro v2 · performance.now() · 60fps · pre-warm torch');
+</script>
 </body>
 </html>
