@@ -356,9 +356,13 @@
             background: rgba(255,255,255,0.2);
             flex-shrink: 0;
         }
-        .flash-dot.on {
+        .flash-dot.available {
             background: #2ecc71;
             box-shadow: 0 0 6px #2ecc71;
+        }
+        .flash-dot.on {
+            background: #f9ca24;
+            box-shadow: 0 0 10px #f9ca24, 0 0 20px #f9ca24;
         }
 
         /* Log panel */
@@ -725,8 +729,8 @@
                 const cap = videoTrack.getCapabilities();
                 torchSupported = cap.torch === true;
                 if (torchSupported) {
-                    flashTextSpan.innerHTML = '✅ DISPONIBLE';
-                    flashDot.className = 'flash-dot on';
+                    flashTextSpan.innerHTML = '✅ DISPONIBLE (apagado)';
+                    flashDot.className = 'flash-dot available';
                     statusDiv.innerHTML = `✅ Cámara ${facingMode === 'environment' ? 'TRASERA' : 'FRONTAL'} lista | Flash OK`;
                     addLog('✅ Torch / Flash disponible', 'ok');
 
@@ -759,13 +763,20 @@
     async function prewarmTorch() {
         if (!torchSupported || !videoTrack) return;
         try {
-            // Encender y apagar en ciclo muy rápido — el driver queda en estado activo
+            // Encender brevemente y apagar con doble confirmación
             await videoTrack.applyConstraints({ advanced: [{ torch: true }] });
             await new Promise(r => setTimeout(r, 30));
+            // Apagar con doble intento para asegurar que queda OFF
             await videoTrack.applyConstraints({ advanced: [{ torch: false }] });
-            addLog('🔥 Pre-warm del torch completado', 'ok');
+            await new Promise(r => setTimeout(r, 50));
+            await videoTrack.applyConstraints({ advanced: [{ torch: false }] }); // segundo intento de seguridad
+            addLog('🔥 Pre-warm completado — torch confirmado OFF', 'ok');
         } catch (e) {
-            // No es crítico si falla
+            // Si falla el prewarm, intentar al menos dejar el torch apagado
+            try {
+                await videoTrack.applyConstraints({ advanced: [{ torch: false }] });
+            } catch (_) {}
+            addLog('⚠️ Pre-warm omitido (no crítico)', '');
         }
     }
 
@@ -834,6 +845,8 @@
 
                 flashOverlay.classList.add('active');  // Flash visual pantalla completa
                 await setFlash(true);
+                flashDot.className = 'flash-dot on';
+                flashTextSpan.innerHTML = '🔆 ENCENDIDO';
 
                 flashOnPerf = performance.now();
                 const actualElapsed = flashOnPerf - recordStartPerf;
@@ -850,6 +863,8 @@
                 const callTime = performance.now();
                 flashOverlay.classList.remove('active');
                 await setFlash(false);
+                flashDot.className = 'flash-dot available';
+                flashTextSpan.innerHTML = '✅ APAGADO';
 
                 flashOffPerf = performance.now();
                 const actualElapsed = flashOffPerf - recordStartPerf;
@@ -905,6 +920,12 @@
 
         flashOverlay.classList.remove('active');
         setFlash(false);
+        // Segundo apagado de seguridad tras 100ms
+        setTimeout(() => setFlash(false), 100);
+        if (torchSupported) {
+            flashDot.className = 'flash-dot available';
+            flashTextSpan.innerHTML = '✅ DISPONIBLE (apagado)';
+        }
 
         if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
 
