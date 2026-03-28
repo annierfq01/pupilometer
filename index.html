@@ -835,46 +835,46 @@
 
             statusDiv.innerHTML = '🔴 GRABANDO — Línea basal';
 
-            // ─── Programar flash ON ────────────────────────────────────────
+            // ─── Flash: ON → esperar duración real → OFF (encadenado) ────────
+            // El OFF se programa DENTRO del callback del ON, una vez que
+            // applyConstraints(true) ya completó. Así se elimina la race
+            // condition entre los dos setTimeout independientes.
             const hFlashOn = setTimeout(async () => {
                 if (!isRecording) return;
 
-                // MEJORA 3: Registrar timestamp real antes Y después de applyConstraints
-                const callTime = performance.now();
-                const elapsed = callTime - recordStartPerf;
-
-                flashOverlay.classList.add('active');  // Flash visual pantalla completa
+                const callTimeOn = performance.now();
+                flashOverlay.classList.add('active');
                 await setFlash(true);
                 flashDot.className = 'flash-dot on';
                 flashTextSpan.innerHTML = '🔆 ENCENDIDO';
 
                 flashOnPerf = performance.now();
-                const actualElapsed = flashOnPerf - recordStartPerf;
-                const latency = flashOnPerf - callTime;
-
-                addLog(`💡 FLASH ON  → t_real=${actualElapsed.toFixed(1)}ms | latencia torch=${latency.toFixed(1)}ms`, 'flash');
+                const latencyOn = flashOnPerf - callTimeOn;
+                addLog(`💡 FLASH ON  → t=${(flashOnPerf - recordStartPerf).toFixed(1)}ms | latencia=${latencyOn.toFixed(1)}ms`, 'flash');
                 statusDiv.innerHTML = '💡 FLASH — Estímulo luminoso';
+
+                // ── OFF encadenado: espera la duración nominal desde que el ON realmente prendió
+                const hFlashOff = setTimeout(async () => {
+                    if (!isRecording) return;
+
+                    const callTimeOff = performance.now();
+                    flashOverlay.classList.remove('active');
+                    await setFlash(false);
+                    // Segundo apagado de seguridad
+                    await setFlash(false);
+                    flashDot.className = 'flash-dot available';
+                    flashTextSpan.innerHTML = '✅ APAGADO';
+
+                    flashOffPerf = performance.now();
+                    const latencyOff = flashOffPerf - callTimeOff;
+                    const realDuration = flashOffPerf - flashOnPerf;
+                    addLog(`🔆 FLASH OFF → t=${(flashOffPerf - recordStartPerf).toFixed(1)}ms | latencia=${latencyOff.toFixed(1)}ms`, 'flash');
+                    addLog(`   Duración real del flash: ${realDuration.toFixed(1)}ms (nominal: ${PROTOCOL.FLASH_DURATION}ms)`);
+                    statusDiv.innerHTML = '📹 Recuperación pupilar';
+                }, PROTOCOL.FLASH_DURATION);
+
+                scheduledHandles.push(hFlashOff);
             }, PROTOCOL.FLASH_ON_TIME);
-
-            // ─── Programar flash OFF ───────────────────────────────────────
-            const hFlashOff = setTimeout(async () => {
-                if (!isRecording) return;
-
-                const callTime = performance.now();
-                flashOverlay.classList.remove('active');
-                await setFlash(false);
-                flashDot.className = 'flash-dot available';
-                flashTextSpan.innerHTML = '✅ APAGADO';
-
-                flashOffPerf = performance.now();
-                const actualElapsed = flashOffPerf - recordStartPerf;
-                const latency = flashOffPerf - callTime;
-                const realDuration = flashOffPerf - flashOnPerf;
-
-                addLog(`🔆 FLASH OFF → t_real=${actualElapsed.toFixed(1)}ms | latencia=${latency.toFixed(1)}ms`, 'flash');
-                addLog(`   Duración real del flash: ${realDuration.toFixed(1)}ms (nominal: ${PROTOCOL.FLASH_DURATION}ms)`);
-                statusDiv.innerHTML = '📹 Recuperación pupilar';
-            }, PROTOCOL.FLASH_ON_TIME + PROTOCOL.FLASH_DURATION);
 
             // ─── Fin de protocolo ──────────────────────────────────────────
             const hEnd = setTimeout(() => {
@@ -883,7 +883,7 @@
                 stopRecording();
             }, PROTOCOL.TOTAL_DURATION);
 
-            scheduledHandles = [hFlashOn, hFlashOff, hEnd];
+            scheduledHandles = [hFlashOn, hEnd];
 
             // ─── Loop de actualización de UI con performance.now() ─────────
             function uiLoop(ts) {
