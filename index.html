@@ -724,6 +724,11 @@
             const settings = videoTrack.getSettings();
             addLog(`📷 Cámara: ${settings.width}×${settings.height} @ ${settings.frameRate || '?'}fps`, 'ok');
 
+            // Forzar torch apagado desde el primer momento
+            try {
+                await videoTrack.applyConstraints({ advanced: [{ torch: false }] });
+            } catch (_) {}
+
             // Verificar torch
             if (videoTrack && videoTrack.getCapabilities) {
                 const cap = videoTrack.getCapabilities();
@@ -733,11 +738,6 @@
                     flashDot.className = 'flash-dot available';
                     statusDiv.innerHTML = `✅ Cámara ${facingMode === 'environment' ? 'TRASERA' : 'FRONTAL'} lista | Flash OK`;
                     addLog('✅ Torch / Flash disponible', 'ok');
-
-                    // MEJORA 2: Pre-warm del driver del torch
-                    // Activamos y apagamos inmediatamente para que el driver quede "listo"
-                    // Esto reduce la latencia real del primer encendido
-                    await prewarmTorch();
                 } else {
                     flashTextSpan.innerHTML = '❌ No disponible';
                     flashDot.className = 'flash-dot';
@@ -756,27 +756,6 @@
             addLog(`❌ Error cámara: ${err.message}`, 'err');
             startBtn.disabled = true;
             return false;
-        }
-    }
-
-    // MEJORA 2 (implementación): Pre-calentamiento del torch
-    async function prewarmTorch() {
-        if (!torchSupported || !videoTrack) return;
-        try {
-            // Encender brevemente y apagar con doble confirmación
-            await videoTrack.applyConstraints({ advanced: [{ torch: true }] });
-            await new Promise(r => setTimeout(r, 30));
-            // Apagar con doble intento para asegurar que queda OFF
-            await videoTrack.applyConstraints({ advanced: [{ torch: false }] });
-            await new Promise(r => setTimeout(r, 50));
-            await videoTrack.applyConstraints({ advanced: [{ torch: false }] }); // segundo intento de seguridad
-            addLog('🔥 Pre-warm completado — torch confirmado OFF', 'ok');
-        } catch (e) {
-            // Si falla el prewarm, intentar al menos dejar el torch apagado
-            try {
-                await videoTrack.applyConstraints({ advanced: [{ torch: false }] });
-            } catch (_) {}
-            addLog('⚠️ Pre-warm omitido (no crítico)', '');
         }
     }
 
