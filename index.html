@@ -568,21 +568,27 @@
         <div class="timeline">
             <div class="timeline-row">
                 <span class="t-badge">0.0s</span>
-                <span class="t-label">▶ Inicio — línea basal</span>
+                <span class="t-label">▶ Basal</span>
+                <span style="margin-left:auto;font-family:'Share Tech Mono',monospace;font-size:9px;color:rgba(0,245,212,0.5)">5fps · 5 frames</span>
             </div>
             <div class="timeline-row">
                 <span class="t-badge" id="t-flashon">1.0s</span>
                 <span class="t-bold">💡 FLASH ON</span>
-                <span class="t-label">(estímulo)</span>
+                <span class="t-label">(1000ms — 1 segundo)</span>
             </div>
             <div class="timeline-row">
-                <span class="t-badge" id="t-flashoff">1.2s</span>
+                <span class="t-badge" id="t-flashoff">2.0s</span>
                 <span class="t-bold">🔆 FLASH OFF</span>
-                <span class="t-label">→ constricción</span>
+                <span style="margin-left:auto;font-family:'Share Tech Mono',monospace;font-size:9px;color:rgba(0,245,212,0.5)">20fps · 20 frames</span>
             </div>
             <div class="timeline-row">
-                <span class="t-badge">6.0s</span>
-                <span class="t-label">⏹ Fin — recuperación completada</span>
+                <span class="t-badge">2.0s</span>
+                <span class="t-label">📈 Recuperación</span>
+                <span style="margin-left:auto;font-family:'Share Tech Mono',monospace;font-size:9px;color:rgba(0,245,212,0.5)">10fps · 50 frames</span>
+            </div>
+            <div class="timeline-row">
+                <span class="t-badge">7.0s</span>
+                <span class="t-label">⏹ Fin · <strong style="color:var(--cyan)">75 frames total</strong></span>
             </div>
         </div>
 
@@ -653,10 +659,9 @@
     let videoTrack       = null;
     let currentFacingMode= 'environment';
     let rafHandle        = null;
-    let recordStartPerf  = 0;   // performance.now() en el momento del start
-    let flashOnPerf      = 0;   // timestamp real del flash ON
-    let flashOffPerf     = 0;   // timestamp real del flash OFF
-    let scheduledHandles = [];   // para poder cancelar todos los timers
+    let recordStartPerf  = 0;
+    let flashOnPerf      = 0;
+    let flashOffPerf     = 0;
     let logEntries       = [];
     let fpsEstimate      = 0;
     let lastFrameTime    = 0;
@@ -665,9 +670,24 @@
     // ─── Protocolo ────────────────────────────────────────────────────────
     const PROTOCOL = {
         FLASH_ON_TIME  : 1000,  // ms desde inicio
-        FLASH_DURATION : 200,   // ms de duración del flash
-        TOTAL_DURATION : 6000   // ms duración total
+        FLASH_DURATION : 1000,  // ms — flash dura 1 segundo completo (t=1s → t=2s)
+        TOTAL_DURATION : 7000   // ms — 1s basal + 1s constricción + 5s recuperación
     };
+
+    // ─── Muestreo adaptativo de frames ────────────────────────────────────
+    // Fase 1 — Basal        (0s → 1s):  cada 200ms →  5 frames @  5fps
+    // Fase 2 — Constricción (1s → 2s):  cada  50ms → 20 frames @ 20fps
+    // Fase 3 — Recuperación (2s → 7s):  cada 100ms → 50 frames @ 10fps
+    // Total: 75 frames
+    function buildSampleTimestamps() {
+        const ts = [];
+        for (let t = 0;    t < 1000;  t += 200) ts.push(t);
+        for (let t = 1000; t < 2000;  t += 50)  ts.push(t);
+        for (let t = 2000; t <= 7000; t += 100) ts.push(t);
+        return ts;
+    }
+    const SAMPLE_TIMESTAMPS = buildSampleTimestamps();
+    // SAMPLE_TIMESTAMPS contiene los ms exactos a los que hay que extraer frames del video
 
     // ─── Log ──────────────────────────────────────────────────────────────
     function addLog(msg, type = '') {
@@ -769,112 +789,120 @@
         }
     }
 
-    // ─── Protocolo principal ──────────────────────────────────────────────
+    // ─── Protocolo principal — Máquina de estados con requestAnimationFrame ─
+    //
+    // Estados:
+    //   0 — Basal: esperando llegar a FLASH_ON_TIME
+    //   1 — Flash ON enviado al HW (Promise pendiente, bloqueamos re-entrada)
+    //   2 — Flash ON confirmado por HW (Promise resuelto, contamos duración real)
+    //   3 — Flash OFF enviado al HW (Promise pendiente)
+    //   4 — Flash OFF confirmado, en recuperación
+    //
+    // Ventaja vs setTimeout: el bucle RAF corre cada ~16ms sin deriva acumulada.
+    // Si el procesador se retrasa 40ms, en el siguiente frame detecta el desfase
+    // y actúa de inmediato. Los setTimeout empujan toda la cadena hacia atrás.
+    // El OFF además mide su disparo desde el momento REAL del ON (flashOnPerf),
+    // garantizando ~1000ms de luz constante independientemente de la latencia HW.
+    // ─────────────────────────────────────────────────────────────────────────
     async function startProtocol() {
         if (!mediaStream) { alert('Espere a que la cámara esté lista'); return; }
-
         if (!torchSupported) {
-            const ok = confirm('⚠️ Flash NO disponible en esta cámara.\nEl protocolo requiere estímulo luminoso.\n¿Continuar de todas formas?');
+            const ok = confirm('⚠️ Flash NO disponible.\nEl protocolo requiere estímulo luminoso.\n¿Continuar de todas formas?');
             if (!ok) return;
         }
-
         if (isRecording) return;
 
         recordedChunks = [];
         isRecording = true;
-        flashOnPerf = 0;
+        flashOnPerf  = 0;
         flashOffPerf = 0;
         startBtn.disabled = true;
-        stopBtn.disabled = false;
+        stopBtn.disabled  = false;
         recBadge.classList.add('visible');
         logContainer.innerHTML = '';
         logEntries = [];
 
+        let protocolState = 0; // máquina de estados
+
         try {
-            // Intentar el mejor codec disponible
-            const mimeTypes = [
-                'video/webm;codecs=vp9',
-                'video/webm;codecs=vp8',
-                'video/webm',
-                'video/mp4'
-            ];
-            let mimeType = mimeTypes.find(m => MediaRecorder.isTypeSupported(m)) || '';
+            const mimeTypes = ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm','video/mp4'];
+            const mimeType  = mimeTypes.find(m => MediaRecorder.isTypeSupported(m)) || '';
 
             mediaRecorder = new MediaRecorder(mediaStream, mimeType ? { mimeType } : {});
             mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
             mediaRecorder.onstop = () => saveRecording();
+            mediaRecorder.start(100); // chunks cada 100ms para mejor sync temporal
 
-            // MEJORA 3: timeslice pequeño para chunks frecuentes (mejor sync)
-            mediaRecorder.start(100);
-
-            // MEJORA 1: Usar performance.now() para el tiempo de inicio
             recordStartPerf = performance.now();
-            addLog(`▶ Grabación iniciada [t=0.000ms]`, 'ok');
-            addLog(`   Codec: ${mimeType || 'default'} | FPS camara: ~${fpsEstimate}`);
-
+            addLog(`▶ Grabación iniciada [t=0.0ms]`, 'ok');
+            addLog(`   Codec: ${mimeType || 'default'} | FPS cámara: ~${fpsEstimate}`);
+            addLog(`📐 Muestreo adaptativo: 75 frames en 7s`);
+            addLog(`   Fase 1 basal       0→1s:  5 frames @  5fps (200ms)`);
+            addLog(`   Fase 2 constricción 1→2s: 20 frames @ 20fps ( 50ms)`);
+            addLog(`   Fase 3 recuperación 2→7s: 50 frames @ 10fps (100ms)`);
             statusDiv.innerHTML = '🔴 GRABANDO — Línea basal';
 
-            // ─── Flash: ON → esperar duración real → OFF (encadenado) ────────
-            // El OFF se programa DENTRO del callback del ON, una vez que
-            // applyConstraints(true) ya completó. Así se elimina la race
-            // condition entre los dos setTimeout independientes.
-            const hFlashOn = setTimeout(async () => {
+            // ── Bucle de alta precisión ────────────────────────────────────
+            function precisionLoop() {
                 if (!isRecording) return;
 
-                const callTimeOn = performance.now();
-                flashOverlay.classList.add('active');
-                await setFlash(true);
-                flashDot.className = 'flash-dot on';
-                flashTextSpan.innerHTML = '🔆 ENCENDIDO';
+                const now     = performance.now();
+                const elapsed = now - recordStartPerf;
 
-                flashOnPerf = performance.now();
-                const latencyOn = flashOnPerf - callTimeOn;
-                addLog(`💡 FLASH ON  → t=${(flashOnPerf - recordStartPerf).toFixed(1)}ms | latencia=${latencyOn.toFixed(1)}ms`, 'flash');
-                statusDiv.innerHTML = '💡 FLASH — Estímulo luminoso';
+                // UI fluida en cada frame
+                timerDiv.textContent      = `${(elapsed / 1000).toFixed(1)}s`;
+                progressFill.style.width  = `${Math.min((elapsed / PROTOCOL.TOTAL_DURATION) * 100, 100)}%`;
 
-                // ── OFF encadenado: espera la duración nominal desde que el ON realmente prendió
-                const hFlashOff = setTimeout(async () => {
-                    if (!isRecording) return;
+                // ── Estado 0 → 1: disparar FLASH ON ───────────────────────
+                if (protocolState === 0 && elapsed >= PROTOCOL.FLASH_ON_TIME) {
+                    protocolState = 1; // bloquea re-entrada mientras el Promise está pendiente
+                    const callTimeOn = performance.now();
+                    flashOverlay.classList.add('active');
+                    statusDiv.innerHTML = '💡 FLASH — Estímulo luminoso';
 
+                    setFlash(true).then(() => {
+                        flashOnPerf = performance.now();
+                        protocolState = 2; // HW confirmó encendido
+                        flashDot.className      = 'flash-dot on';
+                        flashTextSpan.innerHTML = '🔆 ENCENDIDO';
+                        const latencyOn = flashOnPerf - callTimeOn;
+                        addLog(`💡 ON  → t_real=${(flashOnPerf - recordStartPerf).toFixed(1)}ms | HW delay=${latencyOn.toFixed(1)}ms`, 'flash');
+                    });
+                }
+
+                // ── Estado 2 → 3: disparar FLASH OFF ──────────────────────
+                // Se mide desde flashOnPerf (momento real del encendido HW),
+                // no desde el inicio del protocolo. Esto garantiza ~1000ms de luz constante.
+                if (protocolState === 2 && (now - flashOnPerf) >= PROTOCOL.FLASH_DURATION) {
+                    protocolState = 3;
                     const callTimeOff = performance.now();
                     flashOverlay.classList.remove('active');
-                    await setFlash(false);
-                    // Segundo apagado de seguridad
-                    await setFlash(false);
-                    flashDot.className = 'flash-dot available';
-                    flashTextSpan.innerHTML = '✅ APAGADO';
-
-                    flashOffPerf = performance.now();
-                    const latencyOff = flashOffPerf - callTimeOff;
-                    const realDuration = flashOffPerf - flashOnPerf;
-                    addLog(`🔆 FLASH OFF → t=${(flashOffPerf - recordStartPerf).toFixed(1)}ms | latencia=${latencyOff.toFixed(1)}ms`, 'flash');
-                    addLog(`   Duración real del flash: ${realDuration.toFixed(1)}ms (nominal: ${PROTOCOL.FLASH_DURATION}ms)`);
                     statusDiv.innerHTML = '📹 Recuperación pupilar';
-                }, PROTOCOL.FLASH_DURATION);
 
-                scheduledHandles.push(hFlashOff);
-            }, PROTOCOL.FLASH_ON_TIME);
+                    setFlash(false).then(() => {
+                        setFlash(false); // segundo apagado de seguridad
+                        flashOffPerf = performance.now();
+                        protocolState = 4;
+                        flashDot.className      = 'flash-dot available';
+                        flashTextSpan.innerHTML = '✅ APAGADO';
+                        const latencyOff  = flashOffPerf - callTimeOff;
+                        const realDuration = flashOffPerf - flashOnPerf;
+                        addLog(`🔆 OFF → t_real=${(flashOffPerf - recordStartPerf).toFixed(1)}ms | HW delay=${latencyOff.toFixed(1)}ms`, 'flash');
+                        addLog(`   Duración real del pulso: ${realDuration.toFixed(1)}ms (esperado: ${PROTOCOL.FLASH_DURATION}ms (1s))`);
+                    });
+                }
 
-            // ─── Fin de protocolo ──────────────────────────────────────────
-            const hEnd = setTimeout(() => {
-                if (!isRecording) return;
-                addLog(`⏹ Protocolo completado a t=${(performance.now()-recordStartPerf).toFixed(1)}ms`, 'ok');
-                stopRecording();
-            }, PROTOCOL.TOTAL_DURATION);
+                // ── Finalización ───────────────────────────────────────────
+                if (elapsed >= PROTOCOL.TOTAL_DURATION) {
+                    addLog(`⏹ Protocolo completado a t=${elapsed.toFixed(1)}ms`, 'ok');
+                    stopRecording();
+                    return; // termina el bucle
+                }
 
-            scheduledHandles = [hFlashOn, hEnd];
-
-            // ─── Loop de actualización de UI con performance.now() ─────────
-            function uiLoop(ts) {
-                if (!isRecording) return;
-                const elapsed = performance.now() - recordStartPerf;
-                const secs = (elapsed / 1000).toFixed(1);
-                timerDiv.textContent = `${secs}s`;
-                const pct = Math.min((elapsed / PROTOCOL.TOTAL_DURATION) * 100, 100);
-                progressFill.style.width = `${pct}%`;
-                rafHandle = requestAnimationFrame(uiLoop);
+                rafHandle = requestAnimationFrame(precisionLoop);
             }
-            rafHandle = requestAnimationFrame(uiLoop);
+
+            rafHandle = requestAnimationFrame(precisionLoop);
 
         } catch (err) {
             console.error(err);
@@ -882,7 +910,7 @@
             addLog(`❌ ${err.message}`, 'err');
             isRecording = false;
             startBtn.disabled = false;
-            stopBtn.disabled = true;
+            stopBtn.disabled  = true;
             recBadge.classList.remove('visible');
         }
     }
@@ -892,36 +920,35 @@
         if (!isRecording) return;
         isRecording = false;
 
-        scheduledHandles.forEach(h => clearTimeout(h));
-        scheduledHandles = [];
-
+        // Cancelar el bucle RAF
         if (rafHandle) { cancelAnimationFrame(rafHandle); rafHandle = null; }
 
+        // Apagar flash — doble llamada de seguridad
         flashOverlay.classList.remove('active');
         setFlash(false);
-        // Segundo apagado de seguridad tras 100ms
         setTimeout(() => setFlash(false), 100);
+
         if (torchSupported) {
-            flashDot.className = 'flash-dot available';
+            flashDot.className      = 'flash-dot available';
             flashTextSpan.innerHTML = '✅ DISPONIBLE (apagado)';
         }
 
         if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
 
         statusDiv.innerHTML = '✅ Grabación finalizada';
-        timerDiv.textContent = '6.0s';
+        timerDiv.textContent = '7.0s';
         progressFill.style.width = '100%';
         recBadge.classList.remove('visible');
 
-        // Mostrar resumen de precisión
+        // Resumen de precisión
         if (flashOnPerf > 0 && flashOffPerf > 0) {
             const onElapsed  = (flashOnPerf  - recordStartPerf).toFixed(1);
             const offElapsed = (flashOffPerf - recordStartPerf).toFixed(1);
             const duration   = (flashOffPerf - flashOnPerf).toFixed(1);
-            addLog(`📊 Resumen: ON@${onElapsed}ms OFF@${offElapsed}ms Duración=${duration}ms`, 'ok');
+            addLog(`📊 Resumen: ON@${onElapsed}ms | OFF@${offElapsed}ms | Duración=${duration}ms`, 'ok');
         }
 
-        setTimeout(() => { progressFill.style.width = '0%'; timerDiv.textContent = '0.0s'; }, 2000);
+        setTimeout(() => { progressFill.style.width = '0%'; timerDiv.textContent = '0.0s'; }, 2500);
     }
 
     // ─── Guardar grabación ────────────────────────────────────────────────
